@@ -1384,6 +1384,16 @@ end
 function M.users(cb)
   local cfg = octo_config.values
   local repo = utils.get_remote_name()
+  if utils.is_blank(repo) then
+    local buffer = utils.get_current_buffer()
+    if buffer then
+      repo = buffer.repo
+    end
+  end
+  if utils.is_blank(repo) then
+    utils.error "Cannot find repo name"
+    return
+  end
   local owner, name = utils.split_repo(repo)
 
   ---@param config snacks.picker.config
