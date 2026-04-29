@@ -2287,11 +2287,26 @@ function M.merge_pr(...)
     end
   end
 
+  for _, param in ipairs(params) do
+    if param == "admin" then
+      opts["admin"] = true
+    end
+  end
+
+  local is_admin_merge = opts["admin"] == true
+
   opts.opts = {
     cb = function(output, stderr, exit_code)
-      local log = exit_code == 0 and utils.info or utils.error
-      log(output .. " " .. stderr)
-      writers.write_state(buffer.bufnr)
+      if exit_code == 0 then
+        if is_admin_merge then
+          utils.info(string.format("PR #%d merged successfully (bypassed branch protections)", buffer.number))
+        else
+          utils.info(output .. " " .. stderr)
+        end
+        M.reload { bufnr = buffer.bufnr }
+      else
+        utils.error(output .. " " .. stderr)
+      end
     end,
   }
 

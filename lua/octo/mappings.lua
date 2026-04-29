@@ -132,6 +132,9 @@ return {
       ["Close PR"] = commands.pr.close,
       ["Reopen PR"] = commands.pr.reopen,
       ["Merge PR"] = commands.pr.merge,
+      ["Merge PR (bypass protections)"] = function()
+        commands.pr.merge "admin"
+      end,
       ["Mark as Ready for Review"] = commands.pr.ready,
       ["Mark as Draft"] = commands.pr.draft,
       ["Update Base Branch"] = commands.pr.update,
@@ -309,6 +312,9 @@ return {
   end),
   show_pr_diff = function()
     require("octo.commands").show_pr_diff()
+  end,
+  merge_pr_admin = function()
+    require("octo.commands").merge_pr("merge", "admin")
   end,
   merge_pr = function()
     require("octo.commands").merge_pr "merge"

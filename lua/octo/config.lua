@@ -386,6 +386,7 @@ function M.get_default_values()
         pr_options = { lhs = "<CR>", desc = "show PR options" },
         checkout_pr = { lhs = "<localleader>po", desc = "checkout PR" },
         merge_pr = { lhs = "<localleader>pm", desc = "merge commit PR" },
+        merge_pr_admin = { lhs = "<localleader>pM", desc = "merge PR bypassing branch protections (admin)" },
         squash_and_merge_pr = { lhs = "<localleader>psm", desc = "squash and merge PR" },
         rebase_and_merge_pr = { lhs = "<localleader>prm", desc = "rebase and merge PR" },
         merge_pr_queue = {
