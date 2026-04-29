@@ -248,6 +248,32 @@ fragment AutoSquashEnabledEventFragment on AutoSquashEnabledEvent {
 }
 ]]
 
+  ---https://docs.github.com/en/graphql/reference/objects#automergeenabledevent
+  ---@class octo.fragments.AutoMergeEnabledEvent
+  ---@field __typename "AutoMergeEnabledEvent"
+  ---@field actor { login: string }
+  ---@field createdAt string
+
+  M.auto_merge_enabled_event = [[
+fragment AutoMergeEnabledEventFragment on AutoMergeEnabledEvent {
+  actor { login }
+  createdAt
+}
+]]
+
+  ---https://docs.github.com/en/graphql/reference/objects#automergedisabledevent
+  ---@class octo.fragments.AutoMergeDisabledEvent
+  ---@field __typename "AutoMergeDisabledEvent"
+  ---@field actor { login: string }
+  ---@field createdAt string
+
+  M.auto_merge_disabled_event = [[
+fragment AutoMergeDisabledEventFragment on AutoMergeDisabledEvent {
+  actor { login }
+  createdAt
+}
+]]
+
   ---https://docs.github.com/en/graphql/reference/objects#headrefdeletedevent
   ---@class octo.fragments.HeadRefDeletedEvent
   ---@field __typename "HeadRefDeletedEvent"
@@ -389,6 +415,46 @@ fragment CrossReferencedEventFragment on CrossReferencedEvent {
     ...PullRequestFields
   }
   target {
+    __typename
+    ...IssueFields
+    ...PullRequestFields
+  }
+}
+]]
+
+  ---@class octo.fragments.MarkedAsDuplicateEvent
+  ---@field __typename "MarkedAsDuplicateEvent"
+  ---@field actor { login: string }
+  ---@field createdAt string
+  ---@field isCrossRepository boolean
+  ---@field canonical octo.fragments.Issue|octo.fragments.PullRequest
+
+  M.marked_as_duplicate_event = [[
+fragment MarkedAsDuplicateEventFragment on MarkedAsDuplicateEvent {
+  actor { login }
+  createdAt
+  isCrossRepository
+  canonical {
+    __typename
+    ...IssueFields
+    ...PullRequestFields
+  }
+}
+]]
+
+  ---@class octo.fragments.UnmarkedAsDuplicateEvent
+  ---@field __typename "UnmarkedAsDuplicateEvent"
+  ---@field actor { login: string }
+  ---@field createdAt string
+  ---@field isCrossRepository boolean
+  ---@field canonical octo.fragments.Issue|octo.fragments.PullRequest
+
+  M.unmarked_as_duplicate_event = [[
+fragment UnmarkedAsDuplicateEventFragment on UnmarkedAsDuplicateEvent {
+  actor { login }
+  createdAt
+  isCrossRepository
+  canonical {
     __typename
     ...IssueFields
     ...PullRequestFields
@@ -637,6 +703,7 @@ fragment UnlabeledEventFragment on UnlabeledEvent {
   ---@field createdAt string
   ---@field stateReason string
   ---@field closable { __typename: string, state: string, stateReason?: string }
+  ---@field duplicateOf? octo.fragments.Issue|octo.fragments.PullRequest
 
   M.closed_event = [[
 fragment ClosedEventFragment on ClosedEvent {
@@ -654,6 +721,11 @@ fragment ClosedEventFragment on ClosedEvent {
     ... on PullRequest {
       state
     }
+  }
+  duplicateOf {
+    __typename
+    ...IssueFields
+    ...PullRequestFields
   }
 }
 ]]
@@ -825,6 +897,9 @@ fragment ReviewRequestRemovedEventFragment on ReviewRequestRemovedEvent {
       isViewer
     }
     ... on Mannequin {
+      login
+    }
+    ... on Bot {
       login
     }
     ... on Team {
@@ -1196,6 +1271,8 @@ fragment CommentDeletedEventFragment on CommentDeletedEvent {
     ...TransferredEventFragment
     ...LockedEventFragment
     ...UnlockedEventFragment
+    ...MarkedAsDuplicateEventFragment
+    ...UnmarkedAsDuplicateEventFragment
 ]]
   if config.values.default_to_projects_v2 then
     issue_timeline_items_connection_fragments = issue_timeline_items_connection_fragments
@@ -1206,7 +1283,7 @@ fragment CommentDeletedEventFragment on CommentDeletedEvent {
     ]]
   end
 
-  ---@alias octo.IssueTimelineItem octo.fragments.AssignedEvent|octo.fragments.UnassignedEvent|octo.fragments.ClosedEvent|octo.fragments.ConnectedEvent|octo.fragments.ReferencedEvent|octo.fragments.CrossReferencedEvent|octo.fragments.DemilestonedEvent|octo.fragments.IssueComment|octo.fragments.LabeledEvent|octo.fragments.MilestonedEvent|octo.fragments.RenamedTitleEvent|octo.fragments.ReopenedEvent|octo.fragments.UnlabeledEvent|octo.fragments.PinnedEvent|octo.fragments.UnpinnedEvent|octo.fragments.SubIssueAddedEvent|octo.fragments.SubIssueRemovedEvent|octo.fragments.ParentIssueAddedEvent|octo.fragments.ParentIssueRemovedEvent|octo.fragments.IssueTypeAddedEvent|octo.fragments.IssueTypeRemovedEvent|octo.fragments.IssueTypeChangedEvent|octo.fragments.AddedToProjectV2Event|octo.fragments.ProjectV2ItemStatusChangedEvent|octo.fragments.RemovedFromProjectV2Event|octo.fragments.CommentDeletedEvent|octo.fragments.BlockedByAddedEvent|octo.fragments.BlockedByRemovedEvent|octo.fragments.BlockingAddedEvent|octo.fragments.BlockingRemovedEvent|octo.fragments.TransferredEvent|octo.fragments.LockedEvent|octo.fragments.UnlockedEvent
+  ---@alias octo.IssueTimelineItem octo.fragments.AssignedEvent|octo.fragments.UnassignedEvent|octo.fragments.ClosedEvent|octo.fragments.ConnectedEvent|octo.fragments.ReferencedEvent|octo.fragments.CrossReferencedEvent|octo.fragments.DemilestonedEvent|octo.fragments.IssueComment|octo.fragments.LabeledEvent|octo.fragments.MilestonedEvent|octo.fragments.RenamedTitleEvent|octo.fragments.ReopenedEvent|octo.fragments.UnlabeledEvent|octo.fragments.PinnedEvent|octo.fragments.UnpinnedEvent|octo.fragments.SubIssueAddedEvent|octo.fragments.SubIssueRemovedEvent|octo.fragments.ParentIssueAddedEvent|octo.fragments.ParentIssueRemovedEvent|octo.fragments.IssueTypeAddedEvent|octo.fragments.IssueTypeRemovedEvent|octo.fragments.IssueTypeChangedEvent|octo.fragments.AddedToProjectV2Event|octo.fragments.ProjectV2ItemStatusChangedEvent|octo.fragments.RemovedFromProjectV2Event|octo.fragments.CommentDeletedEvent|octo.fragments.BlockedByAddedEvent|octo.fragments.BlockedByRemovedEvent|octo.fragments.BlockingAddedEvent|octo.fragments.BlockingRemovedEvent|octo.fragments.TransferredEvent|octo.fragments.LockedEvent|octo.fragments.UnlockedEvent|octo.fragments.MarkedAsDuplicateEvent|octo.fragments.UnmarkedAsDuplicateEvent
 
   ---@class octo.fragments.IssueTimelineItemsConnection
   ---@field nodes octo.IssueTimelineItem[]
@@ -1251,9 +1328,13 @@ fragment IssueTimelineItemsConnectionFragment on IssueTimelineItemsConnection {
     ...HeadRefRestoredEventFragment
     ...HeadRefForcePushedEventFragment
     ...AutoSquashEnabledEventFragment
+    ...AutoMergeEnabledEventFragment
+     ...AutoMergeDisabledEventFragment
     ...CommentDeletedEventFragment
     ...LockedEventFragment
     ...UnlockedEventFragment
+    ...MarkedAsDuplicateEventFragment
+    ...UnmarkedAsDuplicateEventFragment
 ]]
 
   if config.values.default_to_projects_v2 then
@@ -1265,7 +1346,7 @@ fragment IssueTimelineItemsConnectionFragment on IssueTimelineItemsConnection {
     ]]
   end
 
-  ---@alias octo.PullRequestTimelineItem octo.fragments.AssignedEvent|octo.fragments.UnassignedEvent|octo.fragments.AutomaticBaseChangeSucceededEvent|octo.fragments.BaseRefChangedEvent|octo.fragments.ClosedEvent|octo.fragments.ConnectedEvent|octo.fragments.ConvertToDraftEvent|octo.fragments.CrossReferencedEvent|octo.fragments.DemilestonedEvent|octo.fragments.IssueComment|octo.fragments.LabeledEvent|octo.fragments.MergedEvent|octo.fragments.MilestonedEvent|octo.fragments.PullRequestCommit|octo.fragments.PullRequestReview|octo.fragments.ReadyForReviewEvent|octo.fragments.RenamedTitleEvent|octo.fragments.ReopenedEvent|octo.fragments.ReviewDismissedEvent|octo.fragments.ReviewRequestRemovedEvent|octo.fragments.ReviewRequestedEvent|octo.fragments.UnlabeledEvent|octo.fragments.DeployedEvent|octo.fragments.HeadRefDeletedEvent|octo.fragments.HeadRefRestoredEvent|octo.fragments.HeadRefForcePushedEvent|octo.fragments.AutoSquashEnabledEvent|octo.fragments.AddedToProjectV2Event|octo.fragments.RemovedFromProjectV2Event|octo.fragments.ProjectV2ItemStatusChangedEvent|octo.fragments.LockedEvent|octo.fragments.UnlockedEvent
+  ---@alias octo.PullRequestTimelineItem octo.fragments.AssignedEvent|octo.fragments.UnassignedEvent|octo.fragments.AutomaticBaseChangeSucceededEvent|octo.fragments.BaseRefChangedEvent|octo.fragments.ClosedEvent|octo.fragments.ConnectedEvent|octo.fragments.ConvertToDraftEvent|octo.fragments.CrossReferencedEvent|octo.fragments.DemilestonedEvent|octo.fragments.IssueComment|octo.fragments.LabeledEvent|octo.fragments.MergedEvent|octo.fragments.MilestonedEvent|octo.fragments.PullRequestCommit|octo.fragments.PullRequestReview|octo.fragments.ReadyForReviewEvent|octo.fragments.RenamedTitleEvent|octo.fragments.ReopenedEvent|octo.fragments.ReviewDismissedEvent|octo.fragments.ReviewRequestRemovedEvent|octo.fragments.ReviewRequestedEvent|octo.fragments.UnlabeledEvent|octo.fragments.DeployedEvent|octo.fragments.HeadRefDeletedEvent|octo.fragments.HeadRefRestoredEvent|octo.fragments.HeadRefForcePushedEvent|octo.fragments.AutoSquashEnabledEvent|octo.fragments.AutoMergeEnabledEvent|octo.fragments.AutoMergeDisabledEvent|octo.fragments.AddedToProjectV2Event|octo.fragments.RemovedFromProjectV2Event|octo.fragments.ProjectV2ItemStatusChangedEvent|octo.fragments.LockedEvent|octo.fragments.UnlockedEvent|octo.fragments.MarkedAsDuplicateEvent|octo.fragments.UnmarkedAsDuplicateEvent
 
   ---@class octo.fragments.PullRequestTimelineItemsConnection
   ---@field nodes octo.PullRequestTimelineItem[]
@@ -1282,7 +1363,7 @@ fragment PullRequestTimelineItemsConnectionFragment on PullRequestTimelineItemsC
   )
 
   ---@alias octo.IssueState "OPEN"|"CLOSED"
-  ---@alias octo.IssueStateReason "REOPENED"|"NOT_PLANNED"|"COMPLETED"|"DUPLICATED"
+  ---@alias octo.IssueStateReason "REOPENED"|"NOT_PLANNED"|"COMPLETED"|"DUPLICATE"
 
   ---@class octo.fragments.IssueInformation
   ---@field id string

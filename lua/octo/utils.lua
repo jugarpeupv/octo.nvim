@@ -56,8 +56,7 @@ M.state_hl_map = {
   DRAFT = "OctoStateDraft",
   COMPLETED = "OctoStateCompleted",
   NOT_PLANNED = "OctoStateNotPlanned",
-  REOPENED = "OctoStateOpen",
-  DUPLICATED = "OctoStateClosed",
+  DUPLICATE = "OctoStateNotPlanned",
   OPEN = "OctoStateOpen",
   APPROVED = "OctoStateApproved",
   CHANGES_REQUESTED = "OctoStateChangesRequested",
@@ -307,6 +306,46 @@ function M.get_remote(remote)
   return {
     host = "github.com",
     repo = nil,
+  }
+end
+
+---@param repo string
+---@param number integer
+function M.open_buffer(repo, number)
+  local owner, name = M.split_repo(repo)
+  -- Combined query: issueOrPullRequest covers issues+PRs; discussion is a
+  -- separate field. GitHub returns a partial error when discussion is not
+  -- found, but data is still intact, so we read stdout directly and ignore
+  -- the expected NOT_FOUND partial errors.
+  gh.api.graphql {
+    query = queries.issue_kind,
+    fields = { owner = owner, name = name, number = number },
+    opts = {
+      cb = function(stdout, _stderr)
+        if M.is_blank(stdout) then
+          M.error("No issue, PR, or discussion found with number: " .. number)
+          return
+        end
+        ---@type boolean, octo.queries.IssueKind
+        local ok, decoded = pcall(vim.json.decode, stdout)
+        if not ok or not decoded.data then
+          M.error("No issue, PR, or discussion found with number: " .. number)
+          return
+        end
+        local repo_data = decoded.data.repository
+        local iop = repo_data.issueOrPullRequest
+        local discussion = repo_data.discussion
+        if not M.is_blank(iop) and iop.__typename == "Issue" then
+          M.get_issue(number, repo)
+        elseif not M.is_blank(iop) and iop.__typename == "PullRequest" then
+          M.get_pull_request(number, repo)
+        elseif not M.is_blank(discussion) and discussion.__typename == "Discussion" then
+          M.get_discussion(number, repo)
+        else
+          M.error("No issue, PR, or discussion found with number: " .. number)
+        end
+      end,
+    },
   }
 end
 
@@ -1235,7 +1274,8 @@ function M.extract_issue_at_cursor(current_repo)
       _, repo, _, number = url:match(constants.URL_ISSUE_PATTERN)
     end
   end
-  return repo, number
+  local casted_number = tonumber(number)
+  return repo, casted_number and math.floor(casted_number) or nil
 end
 
 ---@param str string
@@ -1671,28 +1711,30 @@ function M.get_pull_request_for_current_branch(cb)
         local number = pr.number
         local id = pr.id
         local query = graphql("pull_request_query", base_owner, base_name, number, _G.octo_pv2_fragment)
-        gh.run {
-          args = { "api", "graphql", "--paginate", "--jq", ".", "-f", string.format("query=%s", query) },
-          cb = function(output, stderr)
-            if stderr and not M.is_blank(stderr) then
-              M.print_err(stderr)
-            elseif output then
-              local resp = M.aggregate_pages(output, "data.repository.pullRequest.timelineItems.nodes")
-              ---@type octo.PullRequest
-              local obj = resp.data.repository.pullRequest
-              local PullRequest = require "octo.model.pull-request"
+        gh.api.graphql {
+          f = { query = query },
+          paginate = true,
+          jq = ".",
+          opts = {
+            cb = gh.create_callback {
+              success = function(output)
+                local resp = M.aggregate_pages(output, "data.repository.pullRequest.timelineItems.nodes")
+                ---@type octo.PullRequest
+                local obj = resp.data.repository.pullRequest
+                local PullRequest = require "octo.model.pull-request"
 
-              local opts = {
-                repo = base_owner .. "/" .. base_name,
-                head_repo = obj.headRepository.nameWithOwner,
-                number = number,
-                id = id,
-                head_ref_name = obj.headRefName,
-              }
+                local opts = {
+                  repo = base_owner .. "/" .. base_name,
+                  head_repo = obj.headRepository.nameWithOwner,
+                  number = number,
+                  id = id,
+                  head_ref_name = obj.headRefName,
+                }
 
-              PullRequest.create_with_merge_base(opts, obj, cb)
-            end
-          end,
+                PullRequest.create_with_merge_base(opts, obj, cb)
+              end,
+            },
+          },
         }
       end
     end,
@@ -1957,11 +1999,15 @@ end
 ---@return string
 function M.get_displayed_state(isIssue, state, stateReason, isDraft)
   if isIssue and state == "CLOSED" then
+<<<<<<< HEAD
     -- Handle vim.NIL which can come from JSON responses
     if stateReason and stateReason ~= vim.NIL and type(stateReason) == "string" then
       return stateReason
     end
     return state
+=======
+    return (not M.is_blank(stateReason) and stateReason) or state
+>>>>>>> upstream/master
   end
 
   if state == "CLOSED" or state == "MERGED" then
@@ -1994,9 +2040,10 @@ end
 -- Symbols found with "Telescope symbols"
 M.icons = {
   issue = {
-    open = { " ", "OctoGreen" },
+    open = { " ", "OctoGreen" },
     closed = { " ", "OctoPurple" },
     not_planned = { " ", "OctoGrey" },
+    duplicate = { " ", "OctoGrey" },
   },
   pull_request = {
     open = { " ", "OctoGreen" },
@@ -2045,6 +2092,8 @@ function M.get_issue_pr_icon(entry)
       return M.icons.issue.open
     elseif state == "CLOSED" and stateReason == "NOT_PLANNED" then
       return M.icons.issue.not_planned
+    elseif state == "CLOSED" and stateReason == "DUPLICATE" then
+      return M.icons.issue.duplicate
     elseif state == "CLOSED" then
       return M.icons.issue.closed
     end

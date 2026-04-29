@@ -316,12 +316,13 @@ function M.write_discussion_poll(bufnr, poll, start_line)
   local total_votes = poll.totalVoteCount
 
   -- First pass: Calculate maximum option text width for alignment
+  ---@type integer
   local max_width = 0
   for _, option in ipairs(options) do
     local prefix = option.viewerHasVoted and "✓ " or "  "
     local vote_text = string.format("%d %s", option.totalVoteCount, option.totalVoteCount == 1 and "vote" or "votes")
     local line_text = string.format("%s%s: %s", prefix, option.option, vote_text)
-    max_width = math.max(max_width, vim.fn.strdisplaywidth(line_text) --[[@as integer]])
+    max_width = math.max(max_width, vim.fn.strdisplaywidth(line_text) --[[@as integer]]) --[[@as integer]]
   end
 
   -- Second pass: Build virtual text arrays with aligned progress bars
@@ -518,8 +519,9 @@ local function get_state_icon(state, state_reason, is_issue, is_discussion)
   elseif is_issue then
     if state == "OPEN" then
       return utils.icons.issue.open
-    elseif state == "CLOSED" or state == "NOT_PLANNED" or state == "COMPLETED" then
-      return (state_reason == "NOT_PLANNED" or state == "NOT_PLANNED") and utils.icons.issue.not_planned
+    elseif state == "CLOSED" or state == "NOT_PLANNED" or state == "COMPLETED" or state == "DUPLICATE" then
+      return (state_reason == "NOT_PLANNED" or state == "NOT_PLANNED" or state == "DUPLICATE")
+          and utils.icons.issue.not_planned
         or utils.icons.issue.closed
     end
   else
@@ -2302,6 +2304,28 @@ function M.write_auto_squash_enabled_event(bufnr, item)
 end
 
 ---@param bufnr integer
+---@param item octo.fragments.AutoMergeEnabledEvent
+function M.write_auto_merge_enabled_event(bufnr, item)
+  TextChunkBuilder:new()
+    :timeline_marker("auto_squash")
+    :actor(item.actor)
+    :heading(" enabled auto-merge")
+    :date(item.createdAt)
+    :write_event(bufnr)
+end
+
+---@param bufnr integer
+---@param item octo.fragments.AutoMergeDisabledEvent
+function M.write_auto_merge_disabled_event(bufnr, item)
+  TextChunkBuilder:new()
+    :timeline_marker("auto_squash")
+    :actor(item.actor)
+    :heading(" disabled auto-merge")
+    :date(item.createdAt)
+    :write_event(bufnr)
+end
+
+---@param bufnr integer
 ---@param item octo.fragments.HeadRefDeletedEvent
 function M.write_head_ref_deleted_event(bufnr, item)
   TextChunkBuilder:new()
@@ -2539,7 +2563,7 @@ local function write_issue_or_pr(bufnr, item, spaces, include_repo)
     table.insert(vt, { " #" .. tostring(item.number) .. " ", "OctoDetailsValue" })
   end
   table.insert(vt, icon)
-  table.insert(vt, { state, utils.state_hl_map[state] })
+  table.insert(vt, { utils.title_case(utils.remove_underscore(state)), utils.state_hl_map[state] })
 
   write_event(bufnr, vt)
 end
@@ -2572,7 +2596,7 @@ end
 ---@param bufnr integer
 ---@param item octo.fragments.ReferencedEvent
 function M.write_referenced_event(bufnr, item)
-  if utils.is_blank(item.actor) then
+  if utils.is_blank(item.actor) or utils.is_blank(item.commit) then
     return
   end
 
@@ -2665,6 +2689,57 @@ end
 ---@param item octo.fragments.BlockingRemovedEvent
 function M.write_blocking_removed_event(bufnr, item)
   write_blocking_event(bufnr, item, "unmarked")
+end
+
+---@param bufnr integer
+---@param item octo.fragments.MarkedAsDuplicateEvent|octo.fragments.UnmarkedAsDuplicateEvent
+---@param verb string
+local function write_duplicate_event(bufnr, item, verb)
+  local builder = TextChunkBuilder:new()
+    :timeline_marker("duplicate")
+    :actor(item.actor)
+    :heading(" " .. verb .. " this as a duplicate of ")
+
+  if item.canonical then
+    local canonical = item.canonical
+    local state = utils.get_displayed_state(
+      canonical.__typename == "Issue",
+      canonical.state,
+      canonical.stateReason,
+      canonical.isDraft
+    )
+    local entry = {
+      kind = canonical.__typename == "Issue" and "issue" or "pull_request",
+      obj = canonical,
+    }
+    local icon = utils.get_icon(entry)
+    if item.isCrossRepository then
+      builder:text(canonical.title, "OctoDetailsLabel")
+      builder:text(
+        " " .. canonical.repository.nameWithOwner .. "#" .. tostring(canonical.number) .. " ",
+        "OctoDetailsValue"
+      )
+    else
+      builder:text(canonical.title, "OctoDetailsLabel")
+      builder:text(" #" .. tostring(canonical.number) .. " ", "OctoDetailsValue")
+    end
+    builder:text(icon[1], icon[2])
+    builder:text(utils.title_case(utils.remove_underscore(state)), utils.state_hl_map[state])
+  end
+
+  builder:date(item.createdAt):write_event(bufnr)
+end
+
+---@param bufnr integer
+---@param item octo.fragments.MarkedAsDuplicateEvent
+function M.write_marked_as_duplicate_event(bufnr, item)
+  write_duplicate_event(bufnr, item, "marked")
+end
+
+---@param bufnr integer
+---@param item octo.fragments.UnmarkedAsDuplicateEvent
+function M.write_unmarked_as_duplicate_event(bufnr, item)
+  write_duplicate_event(bufnr, item, "unmarked")
 end
 
 ---@param bufnr integer
@@ -3000,8 +3075,25 @@ function M.write_closed_event(bufnr, item)
       return b:heading(" closed this as "):text(string.gsub(string.lower(stateReason), "_", " "), "OctoUnderline")
     end)
     :when(not (item.closable and item.closable.__typename == "Issue"), " closed this", "OctoTimelineItemHeading")
-    :date(item.createdAt)
-    :write_event(bufnr)
+
+  if stateReason == "DUPLICATE" and item.duplicateOf and not utils.is_blank(item.duplicateOf) then
+    local dup = item.duplicateOf
+    ---@cast dup octo.fragments.Issue|octo.fragments.PullRequest
+    local dup_state = utils.get_displayed_state(dup.__typename == "Issue", dup.state, dup.stateReason, dup.isDraft)
+    local entry = {
+      kind = dup.__typename == "Issue" and "issue" or "pull_request",
+      obj = dup,
+    }
+    local icon = utils.get_icon(entry)
+    builder
+      :heading(" duplicate of ")
+      :text(dup.title or "", "OctoDetailsLabel")
+      :text(" #" .. tostring(dup.number or "") .. " ", "OctoDetailsValue")
+      :text(icon[1], icon[2])
+      :text(utils.title_case(utils.remove_underscore(dup_state)), utils.state_hl_map[dup_state])
+  end
+
+  builder:date(item.createdAt):write_event(bufnr)
 end
 
 ---Build label event text builders, combining labeled and unlabeled events per actor
@@ -3680,6 +3772,12 @@ function M.write_timeline_items(bufnr, obj)
     elseif item.__typename == "AutoSquashEnabledEvent" then
       M.write_auto_squash_enabled_event(bufnr, item)
       prev_is_event = true
+    elseif item.__typename == "AutoMergeEnabledEvent" then
+      M.write_auto_merge_enabled_event(bufnr, item)
+      prev_is_event = true
+    elseif item.__typename == "AutoMergeDisabledEvent" then
+      M.write_auto_merge_disabled_event(bufnr, item)
+      prev_is_event = true
     elseif item.__typename == "AddedToProjectV2Event" then
       M.write_added_to_project_v2_event(bufnr, item)
       prev_is_event = true
@@ -3709,6 +3807,12 @@ function M.write_timeline_items(bufnr, obj)
       prev_is_event = true
     elseif item.__typename == "BlockedByRemovedEvent" then
       M.write_blocked_by_removed_event(bufnr, item)
+    elseif item.__typename == "MarkedAsDuplicateEvent" then
+      M.write_marked_as_duplicate_event(bufnr, item)
+      prev_is_event = true
+    elseif item.__typename == "UnmarkedAsDuplicateEvent" then
+      M.write_unmarked_as_duplicate_event(bufnr, item)
+      prev_is_event = true
     elseif item.__typename == "TransferredEvent" then
       M.write_transferred_event(bufnr, item)
       prev_is_event = true
