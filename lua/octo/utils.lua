@@ -1999,15 +1999,7 @@ end
 ---@return string
 function M.get_displayed_state(isIssue, state, stateReason, isDraft)
   if isIssue and state == "CLOSED" then
-<<<<<<< HEAD
-    -- Handle vim.NIL which can come from JSON responses
-    if stateReason and stateReason ~= vim.NIL and type(stateReason) == "string" then
-      return stateReason
-    end
-    return state
-=======
     return (not M.is_blank(stateReason) and stateReason) or state
->>>>>>> upstream/master
   end
 
   if state == "CLOSED" or state == "MERGED" then
