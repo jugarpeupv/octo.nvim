@@ -1912,62 +1912,7 @@ function M.create_pr(is_draft)
   local cmd = "git rev-parse --abbrev-ref HEAD"
   local local_branch = string.gsub(vim.fn.system(cmd), "%s+", "")
 
-  -- get remote branches
-  if
-    info == nil
-    or info.refs == nil
-    or info.refs.nodes == nil
-    or info == vim.NIL
-    or info.refs == vim.NIL
-    or info.refs.nodes == vim.NIL
-  then
-    utils.error "Cannot grab remote branches"
-    return
-  end
-  local remote_branches = info.refs.nodes
-
-  local remote_branch_exists = false
-  for _, remote_branch in ipairs(remote_branches) do
-    if local_branch == remote_branch.name then
-      remote_branch_exists = true
-    end
-  end
   local remote_branch = local_branch
-  if not remote_branch_exists then
-    local choice =
-      vim.fn.confirm("Remote branch '" .. local_branch .. "' does not exist. Push local one?", "&Yes\n&No\n&Cancel", 2)
-    if choice == 1 then
-      local remote = "origin"
-      remote_branch = vim.fn.input {
-        prompt = "Enter remote branch name: ",
-        default = local_branch,
-        highlight = function(input)
-          return { { 0, #input, "String" } }
-        end,
-      }
-      utils.info(string.format("Pushing '%s' to '%s:%s' ...", local_branch, remote, remote_branch))
-      local ok, Job = pcall(require, "plenary.job")
-      if ok then
-        local job = Job:new {
-          command = "git",
-          args = { "push", remote, local_branch .. ":" .. remote_branch },
-          cwd = vim.fn.getcwd(),
-        }
-        job:sync()
-        --local stdout = table.concat(job:result(), "\n")
-        local stderr = table.concat(job:stderr_result(), "\n")
-        if not utils.is_blank(stderr) then
-          utils.error(stderr)
-        end
-      else
-        utils.error "Aborting PR creation"
-        return
-      end
-    else
-      utils.error "Aborting PR creation"
-      return
-    end
-  end
 
   local templates = utils.get_repo_templates(repo)
   local base_body = ""
