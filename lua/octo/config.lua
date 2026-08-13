@@ -62,9 +62,10 @@ local M = {}
 
 ---@class OctoConfigFilePanel
 ---@field size number
----@field use_icons boolean
+---@field icons boolean|fun(name: string, ext: string): string?, string?
 
 ---@class OctoConfigUi
+---@field conceallevel integer
 ---@field use_signcolumn boolean
 ---@field use_statuscolumn boolean
 ---@field use_foldtext boolean
@@ -75,6 +76,7 @@ local M = {}
 ---@class OctoConfigReviews
 ---@field auto_show_threads boolean
 ---@field focus OctoSplit
+---@field show_virtual_text boolean
 
 ---@class OctoConfigDiscussions
 ---@field order_by OctoConfigOrderBy
@@ -252,6 +254,7 @@ function M.get_default_values()
       reopened = { "  ", "OctoGreen" },
       assigned = "  ",
       locked = "  ",
+      merge_queue = "  ",
       review_requested = "  ",
     },
     right_bubble_delimiter = "", -- bubble delimiter
@@ -268,6 +271,7 @@ function M.get_default_values()
       projects_v2 = false,
     },
     ui = {
+      conceallevel = 2, -- conceallevel for octo buffers
       use_signcolumn = false, -- show "modified" marks on the sign column
       use_statuscolumn = true, -- show "modified" marks on the status column
       use_foldtext = true,
@@ -290,6 +294,7 @@ function M.get_default_values()
     reviews = {
       auto_show_threads = true, -- automatically show comment threads on cursor move
       focus = "right", -- focus right buffer on diff open
+      show_virtual_text = true, -- show virtual text with comment count and date
     },
     runs = {
       icons = {
@@ -311,7 +316,7 @@ function M.get_default_values()
     },
     file_panel = {
       size = 10, -- changed files panel rows
-      use_icons = true, -- use web-devicons in file panel (if false, nvim-web-devicons does not need to be installed)
+      icons = true, -- true = nvim-web-devicons, false = disabled, function = custom provider
     },
     colors = { -- used for highlight groups (see Colors section below)
       white = "#ffffff",
@@ -353,6 +358,10 @@ function M.get_default_values()
       },
       runs = {
         expand_step = { lhs = "o", desc = "expand workflow step" },
+        next_step = { lhs = "]s", desc = "next workflow step" },
+        prev_step = { lhs = "[s", desc = "previous workflow step" },
+        next_job = { lhs = "]j", desc = "next workflow job" },
+        prev_job = { lhs = "[j", desc = "previous workflow job" },
         open_in_browser = { lhs = "<C-b>", desc = "open workflow run in browser" },
         refresh = { lhs = "<C-r>", desc = "refresh workflow" },
         rerun = { lhs = "<C-o>", desc = "rerun workflow" },
@@ -798,7 +807,16 @@ function M.validate_config()
     validate_notifications()
     if validate_type(config.file_panel, "file_panel", "table") then
       validate_type(config.file_panel.size, "file_panel.size", "number")
-      validate_type(config.file_panel.use_icons, "file_panel.use_icons", "boolean")
+      validate_type(config.file_panel.icons, "file_panel.icons", { "boolean", "function" })
+      if rawget(config.file_panel, "use_icons") ~= nil then
+        err("file_panel.use_icons", "`file_panel.use_icons` is no longer supported; use `file_panel.icons = false`")
+      end
+      if rawget(config.file_panel, "get_icon") ~= nil then
+        err(
+          "file_panel.get_icon",
+          "`file_panel.get_icon` is no longer supported; use `file_panel.icons = function(name, ext) ... end`"
+        )
+      end
     end
     validate_aliases()
     validate_pickers()

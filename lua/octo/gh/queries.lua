@@ -107,6 +107,7 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   ---@class octo.PullRequest : octo.ReactionGroupsFragment
   ---@field id string
   ---@field isDraft boolean
+  ---@field isInMergeQueue? boolean
   ---@field number integer
   ---@field state octo.PullRequestState
   ---@field title string
@@ -157,6 +158,7 @@ query($endCursor: String) {
     pullRequest(number: %d) {
       id
       isDraft
+      isInMergeQueue
       number
       state
       title
@@ -277,14 +279,7 @@ query($endCursor: String) {
     }
   }
 }
-]] .. fragments.cross_referenced_event .. fragments.issue .. fragments.pull_request .. fragments.connected_event .. fragments.convert_to_draft_event .. fragments.milestoned_event .. fragments.demilestoned_event .. fragments.reaction_groups .. fragments.label_connection .. fragments.label .. fragments.assignee_connection .. fragments.issue_comment .. fragments.assigned_event .. fragments.unassigned_event .. fragments.labeled_event .. fragments.unlabeled_event .. fragments.closed_event .. fragments.ready_for_review_event .. fragments.reopened_event .. fragments.pull_request_review .. fragments.pull_request_commit .. fragments.review_request_removed_event .. fragments.review_requested_event .. fragments.merged_event .. fragments.renamed_title_event .. fragments.review_dismissed_event .. fragments.pull_request_timeline_items_connection .. fragments.review_thread_information .. fragments.review_thread_comment .. fragments.deployed_event .. fragments.head_ref_deleted_event .. fragments.head_ref_restored_event .. fragments.head_ref_force_pushed_event .. fragments.auto_squash_enabled_event .. fragments.auto_merge_enabled_event .. fragments.auto_merge_disabled_event .. fragments.automatic_base_change_succeeded_event .. fragments.base_ref_changed_event .. fragments.comment_deleted_event .. fragments.locked_event .. fragments.unlocked_event .. fragments.marked_as_duplicate_event .. fragments.unmarked_as_duplicate_event
-
-  if config.values.default_to_projects_v2 then
-    M.pull_request = M.pull_request
-      .. fragments.added_to_project_v2_event
-      .. fragments.removed_from_project_v2_event
-      .. fragments.project_v2_item_status_changed_event
-  end
+]] .. fragments.issue .. fragments.pull_request .. fragments.reaction_groups .. fragments.label_connection .. fragments.label .. fragments.assignee_connection .. fragments.pull_request_timeline_items_connection .. fragments.review_thread_information .. fragments.review_thread_comment .. fragments.get_pr_timeline_definitions()
 
   ---@class octo.IssueTimelineItemConnection : octo.fragments.IssueTimelineItemsConnection
   --- @field pageInfo octo.PageInfo
@@ -339,14 +334,7 @@ query($endCursor: String) {
     }
   }
 }
-]] .. fragments.cross_referenced_event .. fragments.issue .. fragments.pull_request .. fragments.connected_event .. fragments.milestoned_event .. fragments.demilestoned_event .. fragments.reaction_groups .. fragments.label .. fragments.label_connection .. fragments.assignee_connection .. fragments.issue_comment .. fragments.assigned_event .. fragments.unassigned_event .. fragments.labeled_event .. fragments.unlabeled_event .. fragments.closed_event .. fragments.reopened_event .. fragments.renamed_title_event .. fragments.issue_timeline_items_connection .. fragments.issue_information .. fragments.referenced_event .. fragments.pinned_event .. fragments.unpinned_event .. fragments.subissue_added_event .. fragments.subissue_removed_event .. fragments.parent_issue_added_event .. fragments.parent_issue_removed_event .. fragments.issue_type_added_event .. fragments.issue_type_removed_event .. fragments.issue_type_changed_event .. fragments.comment_deleted_event .. fragments.blocked_by_added_event .. fragments.blocked_by_removed_event .. fragments.blocking_added_event .. fragments.blocking_removed_event .. fragments.transferred_event .. fragments.locked_event .. fragments.unlocked_event .. fragments.marked_as_duplicate_event .. fragments.unmarked_as_duplicate_event
-
-  if config.values.default_to_projects_v2 then
-    M.issue = M.issue
-      .. fragments.added_to_project_v2_event
-      .. fragments.removed_from_project_v2_event
-      .. fragments.project_v2_item_status_changed_event
-  end
+]] .. fragments.issue .. fragments.pull_request .. fragments.reaction_groups .. fragments.label .. fragments.label_connection .. fragments.assignee_connection .. fragments.issue_timeline_items_connection .. fragments.issue_information .. fragments.get_issue_timeline_definitions()
 
   ---@class octo.queries.IssueKind
   ---@field data {
@@ -572,6 +560,7 @@ query(
         repository { nameWithOwner }
         headRefName
         isDraft
+        isInMergeQueue
         state
       }
       pageInfo {
@@ -611,6 +600,7 @@ query($prompt: String!, $type: SearchType = ISSUE, $last: Int = 100) {
         url
         state
         isDraft
+        isInMergeQueue
         repository { nameWithOwner }
       }
       ... on Discussion {
@@ -1607,6 +1597,18 @@ query($owner: String!, $name: String!, $label: String!) {
 }
 ]]
 
+  -- Inject isInMergeQueue for github.com only (may not exist on GHES)
+  if config.values.github_hostname == "" then
+    local field = "isInMergeQueue"
+    M.pull_requests = M.pull_requests:gsub("{isInMergeQueue}", field)
+    M.search = M.search:gsub("{isInMergeQueue}", field)
+    M.pull_request = M.pull_request:gsub("{isInMergeQueue}", field)
+  else
+    -- Remove the placeholder lines for GHES (GraphQL ignores blank lines)
+    M.pull_requests = M.pull_requests:gsub("%s*{isInMergeQueue}\n", "")
+    M.search = M.search:gsub("%s*{isInMergeQueue}\n", "")
+    M.pull_request = M.pull_request:gsub("%s*{isInMergeQueue}\n", "")
+  end
 end
 
 return M

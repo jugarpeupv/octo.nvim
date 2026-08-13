@@ -56,6 +56,8 @@ local function get_hl_groups()
     Strikethrough = { fg = colors.grey, strikethrough = true },
     Underline = { fg = colors.white, underline = true },
     Bubble = { fg = colors.white, bg = colors.grey },
+    ReviewDiffDeleteText = { fg = colors.white, bg = colors.dark_red },
+    ReviewDiffAddText = { fg = colors.white, bg = colors.dark_green },
   }
 end
 
@@ -114,6 +116,7 @@ local function get_hl_links()
     StateCompleted = "OctoPurple",
     StateNotPlanned = "OctoGrey",
     StateDraft = "OctoGrey",
+    StateQueued = "OctoYellow",
     StateMerged = "OctoPurple",
     StatePending = "OctoYellow",
     StateApproved = "OctoGreen",
@@ -127,6 +130,7 @@ local function get_hl_links()
     StateCompletedBubble = "OctoBubblePurple",
     StateNotPlannedBubble = "OctoBubbleGrey",
     StateDraftBubble = "OctoBubbleGrey",
+    StateQueuedBubble = "OctoBubbleYellow",
     StateMergedBubble = "OctoBubblePurple",
     StatePendingBubble = "OctoBubbleYellow",
     StateApprovedBubble = "OctoBubbleGreen",

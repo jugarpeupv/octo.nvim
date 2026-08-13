@@ -124,7 +124,7 @@ From any octo buffer, press `<CR>` in normal mode to see common actions.
   - [fzf-lua](https://github.com/ibhagwan/fzf-lua)
   - [snacks.nvim](https://github.com/folke/snacks.nvim)
   - default picker uses `vim.ui.select`
-- Install [nvim-web-devicons](https://github.com/nvim-tree/nvim-web-devicons)
+- Install [nvim-web-devicons](https://github.com/nvim-tree/nvim-web-devicons) for file panel icons, or configure `file_panel.icons`
 
 After installation, run `:checkhealth octo` to verify your setup.
 
@@ -176,7 +176,7 @@ For a basic installation using [`lazy.nvim`](https://lazy.folke.io/), try:
     "nvim-telescope/telescope.nvim",
     -- OR "ibhagwan/fzf-lua",
     -- OR "folke/snacks.nvim",
-    "nvim-tree/nvim-web-devicons",
+    "nvim-tree/nvim-web-devicons", -- optional if file_panel.icons is a function
   },
 }
 ```
@@ -272,6 +272,7 @@ require"octo".setup {
     reopened = { "  ", "OctoGreen" },
     assigned = "  ",
     locked = "  ",
+    merge_queue = "  ",
     review_requested = "  ",
   },
   right_bubble_delimiter = "", -- bubble delimiter
@@ -288,6 +289,7 @@ require"octo".setup {
     projects_v2 = false,
   },
   ui = {
+    conceallevel = 2, -- conceallevel for octo buffers
     use_signcolumn = false, -- show "modified" marks on the sign column
     use_statuscolumn = true, -- show "modified" marks on the status column
     use_foldtext = true,
@@ -310,6 +312,7 @@ require"octo".setup {
   reviews = {
     auto_show_threads = true, -- automatically show comment threads on cursor move
     focus = "right", -- focus right buffer on diff open
+    show_virtual_text = true, -- show virtual text with comment count and date
   },
   runs = {
     icons = {
@@ -331,7 +334,7 @@ require"octo".setup {
   },
   file_panel = {
     size = 10, -- changed files panel rows
-    use_icons = true, -- use web-devicons in file panel (if false, nvim-web-devicons does not need to be installed)
+    icons = true, -- true = nvim-web-devicons, false = disabled, function = custom provider
   },
   colors = { -- used for highlight groups (see Colors section below)
     white = "#ffffff",
@@ -373,6 +376,10 @@ require"octo".setup {
     },
     runs = {
       expand_step = { lhs = "o", desc = "expand workflow step" },
+      next_step = { lhs = "]s", desc = "next workflow step" },
+      prev_step = { lhs = "[s", desc = "previous workflow step" },
+      next_job = { lhs = "]j", desc = "next workflow job" },
+      prev_job = { lhs = "[j", desc = "previous workflow job" },
       open_in_browser = { lhs = "<C-b>", desc = "open workflow run in browser" },
       refresh = { lhs = "<C-r>", desc = "refresh workflow" },
       rerun = { lhs = "<C-o>", desc = "rerun workflow" },
@@ -574,6 +581,24 @@ require"octo".setup {
 ```
 <!-- END_CONFIG -->
 
+### File panel icons
+
+Configure file panel icons with `file_panel.icons`:
+
+- `true`: use `nvim-web-devicons`
+- `false`: disable icons
+- `function(name, ext)`: return `icon, hl`
+
+```lua
+require("octo").setup({
+  file_panel = {
+    icons = function(name, _ext)
+      return require("mini.icons").get("file", name)
+    end,
+  },
+})
+```
+
 ## 🤖 Commands
 
 There is only an `Octo <object> <action> [arguments]` command:
@@ -755,6 +780,7 @@ If no command is passed, the argument to `Octo` is treated as a URL from where a
 - Hold the cursor on a line with a comment to show a thread buffer with all the thread comments
   - To modify, delete, react or reply to a comment, move to the window containing the thread buffer
   - Perform any operations as if you were in a regular issue buffer
+- Virtual text showing comment count and date can be controlled via the `show_virtual_text` option under `reviews` config
 - Review pending comments with `Octo review comments`
   - Use <CR> to jump to the selected pending comment
 - If you want to review a specific commit, use `Octo review commit` to pick a commit. The file panel will get filtered to show only files changed by that commit. Any comments placed on these files will be applied at that specific commit level and will be added to the pending review.
@@ -839,6 +865,8 @@ Also, you can use [`cmp-emoji`](https://github.com/hrsh7th/cmp-emoji) or [`blink
 | _OctoStateClosedFloat_            | OctoRedFloat       |
 | _OctoStateMergedFloat_            | OctoPurpleFloat    |
 | _OctoStateDraftFloat_             | OctoGreyFloat      |
+| _OctoReviewDiffDeleteText_        | OctoRed            |
+| _OctoReviewDiffAddText_           | OctoGreen          |
 
 The term `GitHub color` refers to the colors used in the WebUI.
 The (addition) `viewer` means the user of the plugin or more precisely the user authenticated via the `gh` CLI tool used to retrieve the data from GitHub.

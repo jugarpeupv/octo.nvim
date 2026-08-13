@@ -10,6 +10,7 @@ local folds = require "octo.folds"
 local bubbles = require "octo.ui.bubbles"
 local notify = require "octo.notify"
 local TextChunkBuilder = require "octo.ui.text-chunk-builder"
+local timeline_registry = require "octo.gh.timeline_registry"
 local vim = vim
 
 local M = {}
@@ -533,6 +534,8 @@ local function get_state_icon(state, state_reason, is_issue, is_discussion)
       return utils.icons.pull_request.closed
     elseif state == "DRAFT" then
       return utils.icons.pull_request.draft
+    elseif state == "QUEUED" then
+      return utils.icons.pull_request.queued
     end
   end
 end
@@ -578,7 +581,7 @@ function M.write_state(bufnr, state, number)
   if buffer:isDiscussion() then
     display_state = state
   else
-    display_state = utils.get_displayed_state(is_issue, obj.state, obj.stateReason, obj.isDraft)
+    display_state = utils.get_displayed_state(is_issue, obj.state, obj.stateReason, obj.isDraft, obj.isInMergeQueue)
   end
 
   local is_discussion = buffer:isDiscussion()
@@ -699,8 +702,9 @@ end
 ---@param state string
 ---@param state_reason? string
 ---@param is_draft? boolean
-local function add_status_detail(details, is_issue, state, state_reason, is_draft)
-  local display_state = utils.get_displayed_state(is_issue, state, state_reason, is_draft)
+---@param is_in_merge_queue? boolean
+local function add_status_detail(details, is_issue, state, state_reason, is_draft, is_in_merge_queue)
+  local display_state = utils.get_displayed_state(is_issue, state, state_reason, is_draft, is_in_merge_queue)
 
   TextChunkBuilder:new()
     :detail_label("Status")
@@ -722,7 +726,7 @@ function M.write_details(bufnr, issue, update, include_status)
   local details = {} ---@type [string, string][][]
 
   if include_status then
-    add_status_detail(details, is_issue, issue.state, issue.stateReason, issue.isDraft)
+    add_status_detail(details, is_issue, issue.state, issue.stateReason, issue.isDraft, issue.isInMergeQueue)
   end
 
   table.insert(details, {
@@ -2295,6 +2299,11 @@ end
 ---@param bufnr integer
 ---@param item octo.fragments.AutoSquashEnabledEvent
 function M.write_auto_squash_enabled_event(bufnr, item)
+  -- Handle case where actor is nil (can happen on GHES when fragment is excluded)
+  if utils.is_blank(item.actor) then
+    return
+  end
+
   TextChunkBuilder:new()
     :timeline_marker("auto_squash")
     :actor(item.actor)
@@ -2306,6 +2315,11 @@ end
 ---@param bufnr integer
 ---@param item octo.fragments.AutoMergeEnabledEvent
 function M.write_auto_merge_enabled_event(bufnr, item)
+  -- Handle case where actor is nil (can happen on GHES when fragment is excluded)
+  if utils.is_blank(item.actor) then
+    return
+  end
+
   TextChunkBuilder:new()
     :timeline_marker("auto_squash")
     :actor(item.actor)
@@ -2317,6 +2331,11 @@ end
 ---@param bufnr integer
 ---@param item octo.fragments.AutoMergeDisabledEvent
 function M.write_auto_merge_disabled_event(bufnr, item)
+  -- Handle case where actor is nil (can happen on GHES when fragment is excluded)
+  if utils.is_blank(item.actor) then
+    return
+  end
+
   TextChunkBuilder:new()
     :timeline_marker("auto_squash")
     :actor(item.actor)
@@ -2326,8 +2345,62 @@ function M.write_auto_merge_disabled_event(bufnr, item)
 end
 
 ---@param bufnr integer
+---@param item octo.fragments.AddedToMergeQueueEvent
+function M.write_added_to_merge_queue_event(bufnr, item)
+  -- Handle case where actor is nil (can happen on GHES when fragment is excluded)
+  if utils.is_blank(item.actor) then
+    return
+  end
+
+  TextChunkBuilder:new()
+    :timeline_marker("merge_queue")
+    :actor(item.actor)
+    :heading(" added this pull request to the merge queue")
+    :date(item.createdAt)
+    :write_event(bufnr)
+end
+
+---@param bufnr integer
+---@param item octo.fragments.RemovedFromMergeQueueEvent
+function M.write_removed_from_merge_queue_event(bufnr, item)
+  -- Handle case where actor is nil (can happen on GHES when fragment is excluded)
+  if utils.is_blank(item.actor) then
+    return
+  end
+
+  -- Skip rendering when merged — the MergedEvent already covers that in the timeline
+  if item.reason == "merged" then
+    return
+  end
+
+  local reason_text = item.reason
+      and ({
+        manual = "a manual request",
+        failed_checks = "failed checks",
+        checks_timed_out = "no response for status checks",
+      })[item.reason]
+    or nil
+
+  local builder = TextChunkBuilder:new()
+    :timeline_marker("merge_queue")
+    :actor(item.actor)
+    :heading " removed this pull request from the merge queue"
+
+  if reason_text then
+    builder:heading(" due to " .. reason_text)
+  end
+
+  builder:date(item.createdAt):write_event(bufnr)
+end
+
+---@param bufnr integer
 ---@param item octo.fragments.HeadRefDeletedEvent
 function M.write_head_ref_deleted_event(bufnr, item)
+  -- Handle case where actor is nil (can happen on GHES when fragment is excluded)
+  if utils.is_blank(item.actor) then
+    return
+  end
+
   TextChunkBuilder:new()
     :timeline_marker("head_ref")
     :actor(item.actor)
@@ -2368,6 +2441,11 @@ end
 ---@param bufnr integer
 ---@param item octo.fragments.HeadRefRestoredEvent
 function M.write_head_ref_restored_event(bufnr, item)
+  -- Handle case where actor is nil (can happen on GHES when fragment is excluded)
+  if utils.is_blank(item.actor) then
+    return
+  end
+
   TextChunkBuilder:new()
     :timeline_marker("head_ref")
     :actor(item.actor)
@@ -2382,6 +2460,12 @@ end
 ---@param items octo.fragments.HeadRefForcePushedEvent[]
 function M.write_head_ref_force_pushed_events(bufnr, items)
   local total_events = #items
+
+  -- Handle case where actor is nil (can happen on GHES when fragment is excluded)
+  if utils.is_blank(items[1].actor) then
+    return
+  end
+
   local builder = TextChunkBuilder:new()
     :timeline_marker("force_push")
     :actor(items[1].actor)
@@ -2581,6 +2665,11 @@ end
 ---@param bufnr integer
 ---@param item octo.fragments.DeployedEvent
 function M.write_deployed_event(bufnr, item)
+  -- Handle case where actor is nil (can happen on GHES when fragment is excluded)
+  if utils.is_blank(item.actor) then
+    return
+  end
+
   local bubble_info = utils.deployed_state_map[item.deployment.state]
   TextChunkBuilder:new()
     :timeline_marker("deployed")
@@ -2848,6 +2937,11 @@ end
 ---@param bufnr integer
 ---@param item octo.fragments.ConvertToDraftEvent
 function M.write_convert_to_draft_event(bufnr, item)
+  -- Handle case where actor is nil (can happen on GHES when fragment is excluded)
+  if utils.is_blank(item.actor) then
+    return
+  end
+
   TextChunkBuilder:new()
     :timeline_marker("draft")
     :actor(item.actor)
@@ -2873,6 +2967,11 @@ end
 ---@param bufnr integer
 ---@param item octo.fragments.BaseRefChangedEvent
 function M.write_base_ref_changed_event(bufnr, item)
+  -- Handle case where actor is nil (can happen on GHES when fragment is excluded)
+  if utils.is_blank(item.actor) then
+    return
+  end
+
   TextChunkBuilder:new()
     :timeline_marker("base_ref_changed")
     :actor(item.actor)
@@ -3033,14 +3132,20 @@ end
 
 ---@param bufnr integer
 ---@param item octo.fragments.MergedEvent
-function M.write_merged_event(bufnr, item)
-  TextChunkBuilder:new()
-    :timeline_marker("merged")
-    :actor(item.actor)
-    :heading(" merged commit ")
-    :text(item.commit.abbreviatedOid, "OctoDetailsLabel")
-    :heading(" into ")
+---@param via_queue? boolean
+function M.write_merged_event(bufnr, item, via_queue)
+  local builder = TextChunkBuilder:new():timeline_marker("merged"):actor(item.actor)
+
+  if via_queue then
+    builder:heading " merged via the queue into "
+  else
+    builder:heading " merged into "
+  end
+
+  builder
     :heading(item.mergeRefName)
+    :heading(" with commit ")
+    :text(item.commit.abbreviatedOid, "OctoDetailsLabel")
     :date(item.createdAt)
     :write_event(bufnr)
 end
@@ -3572,6 +3677,24 @@ function M.write_timeline_items(bufnr, obj)
   --- labeled/unlabeled events or subissues events are rendered
   table.insert(timeline_nodes, {})
 
+  --- Pre-scan: detect if this PR was merged via the merge queue.
+  --- The RemovedFromMergeQueueEvent (reason: "merged") appears after MergedEvent
+  --- in the timeline, so we need to know upfront to adjust MergedEvent rendering.
+  local merged_via_queue = false
+  for _, node in ipairs(timeline_nodes) do
+    if node.__typename == "RemovedFromMergeQueueEvent" and node.reason == "merged" then
+      merged_via_queue = true
+      break
+    end
+  end
+
+  ---@param items any[]
+  local function clear_items(items)
+    for idx = #items, 1, -1 do
+      items[idx] = nil
+    end
+  end
+
   ---@param item? octo.PullRequestTimelineItem|octo.IssueTimelineItem
   local function render_accumulated_events(item)
     if
@@ -3579,22 +3702,22 @@ function M.write_timeline_items(bufnr, obj)
       and (not item or (item.__typename ~= "LabeledEvent" and item.__typename ~= "UnlabeledEvent"))
     then
       M.write_label_events(bufnr, unrendered_label_events)
-      unrendered_label_events = {}
+      clear_items(unrendered_label_events)
       prev_is_event = true
     end
     if (not item or item.__typename ~= "SubIssueAddedEvent") and #unrendered_subissue_added_events > 0 then
       M.write_subissue_events(bufnr, unrendered_subissue_added_events, "added")
-      unrendered_subissue_added_events = {}
+      clear_items(unrendered_subissue_added_events)
       prev_is_event = true
     end
     if (not item or item.__typename ~= "SubIssueRemovedEvent") and #unrendered_subissue_removed_events > 0 then
       M.write_subissue_events(bufnr, unrendered_subissue_removed_events, "removed")
-      unrendered_subissue_removed_events = {}
+      clear_items(unrendered_subissue_removed_events)
       prev_is_event = true
     end
     if (not item or item.__typename ~= "PullRequestCommit") and #commits > 0 then
       M.write_commits(bufnr, commits)
-      commits = {}
+      clear_items(commits)
       prev_is_event = true
     end
     if
@@ -3602,16 +3725,17 @@ function M.write_timeline_items(bufnr, obj)
       and (
         not item
         or item.__typename ~= "HeadRefForcePushedEvent"
+        or not item.actor
         or item.actor.login ~= unrendered_force_push_events[1].actor.login
       )
     then
       M.write_head_ref_force_pushed_events(bufnr, unrendered_force_push_events)
-      unrendered_force_push_events = {}
+      clear_items(unrendered_force_push_events)
       prev_is_event = true
     end
     if #unrendered_review_requested_events > 0 and (not item or item.__typename ~= "ReviewRequestedEvent") then
       M.write_review_requested_events(bufnr, unrendered_review_requested_events)
-      unrendered_review_requested_events = {}
+      clear_items(unrendered_review_requested_events)
       prev_is_event = true
     end
     if
@@ -3619,7 +3743,7 @@ function M.write_timeline_items(bufnr, obj)
       and (not item or item.__typename ~= "ReviewRequestRemovedEvent")
     then
       M.write_review_request_removed_events(bufnr, unrendered_review_request_removed_events)
-      unrendered_review_request_removed_events = {}
+      clear_items(unrendered_review_request_removed_events)
       prev_is_event = true
     end
     if
@@ -3627,10 +3751,22 @@ function M.write_timeline_items(bufnr, obj)
       and (not item or (item.__typename ~= "AssignedEvent" and item.__typename ~= "UnassignedEvent"))
     then
       M.write_assignment_events(bufnr, unrendered_assignment_events)
-      unrendered_assignment_events = {}
+      clear_items(unrendered_assignment_events)
       prev_is_event = true
     end
   end
+
+  -- Accumulator tables, keyed by the batch id used in timeline_registry entries.
+  local accumulators = {
+    assignment_events = unrendered_assignment_events,
+    label_events = unrendered_label_events,
+    pull_request_commits = commits,
+    force_pushed_events = unrendered_force_push_events,
+    review_requested_events = unrendered_review_requested_events,
+    review_request_removed_events = unrendered_review_request_removed_events,
+    subissue_added_events = unrendered_subissue_added_events,
+    subissue_removed_events = unrendered_subissue_removed_events,
+  }
 
   for _, item in ipairs(timeline_nodes) do
     render_accumulated_events(item)
@@ -3674,157 +3810,34 @@ function M.write_timeline_items(bufnr, obj)
         M.write_review_decision(bufnr, item)
       end
       prev_is_event = false
-    elseif item.__typename == "AssignedEvent" then
-      table.insert(unrendered_assignment_events, item)
-    elseif item.__typename == "UnassignedEvent" then
-      table.insert(unrendered_assignment_events, item)
-    elseif item.__typename == "PullRequestCommit" then
-      table.insert(commits, item)
-      prev_is_event = true
-    elseif item.__typename == "MergedEvent" then
-      M.write_merged_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "ClosedEvent" then
-      M.write_closed_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "ReopenedEvent" then
-      M.write_reopened_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "LabeledEvent" then
-      table.insert(unrendered_label_events, item)
-    elseif item.__typename == "UnlabeledEvent" then
-      table.insert(unrendered_label_events, item)
-    elseif item.__typename == "ReviewRequestedEvent" then
-      unrendered_review_requested_events[#unrendered_review_requested_events + 1] = item
-      prev_is_event = true
-    elseif item.__typename == "ReviewRequestRemovedEvent" then
-      unrendered_review_request_removed_events[#unrendered_review_request_removed_events + 1] = item
-      prev_is_event = true
-    elseif item.__typename == "ReviewDismissedEvent" then
-      M.write_review_dismissed_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "RenamedTitleEvent" then
-      M.write_renamed_title_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "ConnectedEvent" then
-      M.write_connected_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "CrossReferencedEvent" then
-      M.write_cross_referenced_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "ReferencedEvent" then
-      M.write_referenced_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "MilestonedEvent" then
-      M.write_milestoned_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "DemilestonedEvent" then
-      M.write_demilestoned_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "PinnedEvent" then
-      M.write_pinned_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "UnpinnedEvent" then
-      M.write_unpinned_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "LockedEvent" then
-      M.write_locked_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "UnlockedEvent" then
-      M.write_unlocked_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "SubIssueAddedEvent" then
-      table.insert(unrendered_subissue_added_events, item)
-    elseif item.__typename == "SubIssueRemovedEvent" then
-      table.insert(unrendered_subissue_removed_events, item)
-    elseif item.__typename == "ParentIssueAddedEvent" then
-      M.write_parent_issue_added_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "ParentIssueRemovedEvent" then
-      M.write_parent_issue_removed_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "IssueTypeAddedEvent" then
-      M.write_issue_type_added_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "IssueTypeRemovedEvent" then
-      M.write_issue_type_removed_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "IssueTypeChangedEvent" then
-      M.write_issue_type_changed_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "ConvertToDraftEvent" then
-      M.write_convert_to_draft_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "ReadyForReviewEvent" then
-      M.write_ready_for_review_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "DeployedEvent" then
-      M.write_deployed_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "HeadRefDeletedEvent" then
-      M.write_head_ref_deleted_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "HeadRefRestoredEvent" then
-      M.write_head_ref_restored_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "HeadRefForcePushedEvent" then
-      table.insert(unrendered_force_push_events, item)
-    elseif item.__typename == "AutoSquashEnabledEvent" then
-      M.write_auto_squash_enabled_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "AutoMergeEnabledEvent" then
-      M.write_auto_merge_enabled_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "AutoMergeDisabledEvent" then
-      M.write_auto_merge_disabled_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "AddedToProjectV2Event" then
-      M.write_added_to_project_v2_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "RemovedFromProjectV2Event" then
-      M.write_removed_from_project_v2_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "ProjectV2ItemStatusChangedEvent" then
-      M.write_project_v2_item_status_changed_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "AutomaticBaseChangeSucceededEvent" then
-      M.write_automatic_base_change_succeeded_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "BaseRefChangedEvent" then
-      M.write_base_ref_changed_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "CommentDeletedEvent" then
-      M.write_comment_deleted_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "BlockingAddedEvent" then
-      M.write_blocking_added_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "BlockingRemovedEvent" then
-      M.write_blocking_removed_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "BlockedByAddedEvent" then
-      M.write_blocked_by_added_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "BlockedByRemovedEvent" then
-      M.write_blocked_by_removed_event(bufnr, item)
-    elseif item.__typename == "MarkedAsDuplicateEvent" then
-      M.write_marked_as_duplicate_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "UnmarkedAsDuplicateEvent" then
-      M.write_unmarked_as_duplicate_event(bufnr, item)
-      prev_is_event = true
-    elseif item.__typename == "TransferredEvent" then
-      M.write_transferred_event(bufnr, item)
-      prev_is_event = true
-    elseif
-      not utils.is_blank(item)
-      and config.values.debug.notify_missing_timeline_items
-      ---@diagnostic disable-next-line
-      and is_rendering_event(item.__typename)
-    then
-      ---@diagnostic disable-next-line
-      local info = item.__typename and item.__typename or vim.inspect(item)
-      utils.info("Unhandled timeline item: " .. info)
+    else
+      local entry = timeline_registry.get(item.__typename)
+      if entry then
+        if entry.writer then
+          if item.__typename == "MergedEvent" and merged_via_queue then
+            M.write_merged_event(bufnr, item, true)
+          else
+            entry.writer(bufnr, item)
+          end
+          if entry.sets_prev_event == nil or entry.sets_prev_event then
+            prev_is_event = true
+          end
+        elseif entry.batch then
+          table.insert(accumulators[entry.batch], item)
+          if entry.sets_prev_event then
+            prev_is_event = true
+          end
+        end
+      elseif
+        not utils.is_blank(item)
+        and config.values.debug.notify_missing_timeline_items
+        ---@diagnostic disable-next-line
+        and is_rendering_event(item.__typename)
+      then
+        ---@diagnostic disable-next-line
+        local info = item.__typename and item.__typename or vim.inspect(item)
+        utils.info("Unhandled timeline item: " .. info)
+      end
     end
   end
   render_accumulated_events()
@@ -3832,6 +3845,69 @@ function M.write_timeline_items(bufnr, obj)
   if prev_is_event then
     M.write_block(bufnr, { "" })
   end
+end
+
+-- ---------------------------------------------------------------------------
+-- Timeline writer registry — maps __typename → writer or batch accumulator.
+-- "IssueComment" and "PullRequestReview" are handled with extra logic in
+-- write_timeline_items and are intentionally absent from this registry.
+-- ---------------------------------------------------------------------------
+do
+  local reg = timeline_registry.register
+  -- Direct-dispatch events
+  reg("MergedEvent", { writer = M.write_merged_event })
+  reg("ClosedEvent", { writer = M.write_closed_event })
+  reg("ReopenedEvent", { writer = M.write_reopened_event })
+  reg("ReviewDismissedEvent", { writer = M.write_review_dismissed_event })
+  reg("RenamedTitleEvent", { writer = M.write_renamed_title_event })
+  reg("ConnectedEvent", { writer = M.write_connected_event })
+  reg("CrossReferencedEvent", { writer = M.write_cross_referenced_event })
+  reg("ReferencedEvent", { writer = M.write_referenced_event })
+  reg("MilestonedEvent", { writer = M.write_milestoned_event })
+  reg("DemilestonedEvent", { writer = M.write_demilestoned_event })
+  reg("PinnedEvent", { writer = M.write_pinned_event })
+  reg("UnpinnedEvent", { writer = M.write_unpinned_event })
+  reg("LockedEvent", { writer = M.write_locked_event })
+  reg("UnlockedEvent", { writer = M.write_unlocked_event })
+  reg("ParentIssueAddedEvent", { writer = M.write_parent_issue_added_event })
+  reg("ParentIssueRemovedEvent", { writer = M.write_parent_issue_removed_event })
+  reg("IssueTypeAddedEvent", { writer = M.write_issue_type_added_event })
+  reg("IssueTypeRemovedEvent", { writer = M.write_issue_type_removed_event })
+  reg("IssueTypeChangedEvent", { writer = M.write_issue_type_changed_event })
+  reg("ConvertToDraftEvent", { writer = M.write_convert_to_draft_event })
+  reg("ReadyForReviewEvent", { writer = M.write_ready_for_review_event })
+  reg("DeployedEvent", { writer = M.write_deployed_event })
+  reg("HeadRefDeletedEvent", { writer = M.write_head_ref_deleted_event })
+  reg("HeadRefRestoredEvent", { writer = M.write_head_ref_restored_event })
+  reg("AutoSquashEnabledEvent", { writer = M.write_auto_squash_enabled_event })
+  reg("AutoMergeEnabledEvent", { writer = M.write_auto_merge_enabled_event })
+  reg("AutoMergeDisabledEvent", { writer = M.write_auto_merge_disabled_event })
+  reg("AddedToMergeQueueEvent", { writer = M.write_added_to_merge_queue_event })
+  reg("RemovedFromMergeQueueEvent", { writer = M.write_removed_from_merge_queue_event })
+  reg("AddedToProjectV2Event", { writer = M.write_added_to_project_v2_event })
+  reg("RemovedFromProjectV2Event", { writer = M.write_removed_from_project_v2_event })
+  reg("ProjectV2ItemStatusChangedEvent", { writer = M.write_project_v2_item_status_changed_event })
+  reg("AutomaticBaseChangeSucceededEvent", { writer = M.write_automatic_base_change_succeeded_event })
+  reg("BaseRefChangedEvent", { writer = M.write_base_ref_changed_event })
+  reg("CommentDeletedEvent", { writer = M.write_comment_deleted_event })
+  reg("BlockingAddedEvent", { writer = M.write_blocking_added_event })
+  reg("BlockingRemovedEvent", { writer = M.write_blocking_removed_event })
+  reg("BlockedByAddedEvent", { writer = M.write_blocked_by_added_event })
+  reg("BlockedByRemovedEvent", { writer = M.write_blocked_by_removed_event, sets_prev_event = false })
+  reg("MarkedAsDuplicateEvent", { writer = M.write_marked_as_duplicate_event })
+  reg("UnmarkedAsDuplicateEvent", { writer = M.write_unmarked_as_duplicate_event })
+  reg("TransferredEvent", { writer = M.write_transferred_event })
+  -- Batched events — accumulated and flushed by render_accumulated_events()
+  reg("AssignedEvent", { batch = "assignment_events" })
+  reg("UnassignedEvent", { batch = "assignment_events" })
+  reg("LabeledEvent", { batch = "label_events" })
+  reg("UnlabeledEvent", { batch = "label_events" })
+  reg("PullRequestCommit", { batch = "pull_request_commits", sets_prev_event = true })
+  reg("HeadRefForcePushedEvent", { batch = "force_pushed_events" })
+  reg("ReviewRequestedEvent", { batch = "review_requested_events", sets_prev_event = true })
+  reg("ReviewRequestRemovedEvent", { batch = "review_request_removed_events", sets_prev_event = true })
+  reg("SubIssueAddedEvent", { batch = "subissue_added_events" })
+  reg("SubIssueRemovedEvent", { batch = "subissue_removed_events" })
 end
 
 return M

@@ -24,7 +24,7 @@ Run `:checkhealth octo` to verify your installation. The report covers:
 
 - `octo.nvim`      setup() was called
 - `Neovim version` minimum and recommended version requirements
-- `Dependencies`   gh CLI binary, plenary.nvim, picker plugin, nvim-web-devicons
+- `Dependencies`   gh CLI binary, plenary.nvim, picker plugin, file panel icon provider
 - `Authentication` active GitHub account, token source, and token scopes
 
 If any check fails, follow the advice shown in the report.
@@ -254,6 +254,8 @@ See |octo-command-examples| for examples.
   subscription          Change subscription state (subscribe, unsubscribe, or ignore).
   sha                   Copies the head commit SHA of the currently opened PR
                         to the system clipboard.
+  branch [head|base]    Copies the head (default) or base branch name of the
+                        currently opened PR to the system clipboard.
   runs                  Show all workflow runs for the PR.
 
 
@@ -558,6 +560,8 @@ HIGHLIGHT GROUPS                                *octo-highlights*
   `OctoStateChangesRequested`   `OctoStateClosed`
   `OctoStateCommented`          `Normal`
   `OctoStateDismissed`          `OctoStateClosed`
+  `OctoReviewDiffDeleteText`    GitHub color
+  `OctoReviewDiffAddText`       GitHub color
 
 The term "GitHub color" refers to the colors used in the WebUI.
 
